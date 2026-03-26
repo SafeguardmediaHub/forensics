@@ -1,0 +1,11 @@
+{
+  "engine": "image",
+  "sample": "safeguardmedia/src/api/engines/vff/working/ca16e742-84d7-434b-8dc0-7231a11b8e1e/ca16e742-84d7-434b-8dc0-7231a11b8e1e/frames/frame_000000_00000000.png",
+  "capture_method": "direct visual_forens.generate_forensic_report execution",
+  "comparison_fields": {
+    "verdict": "Likely Authentic",
+    "tampering_likelihood": 17.0,
+    "confidence": "High",
+    "note": "Assessment based on forensic analysis only (AI detection disabled)"
+  }
+}

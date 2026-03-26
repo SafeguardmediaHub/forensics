@@ -1,0 +1,16 @@
+# Runtime dependencies required by the current runner-based engine paths.
+# This is the practical union needed for AFF, VFF, and work when launched
+# through safeguardmedia's engine_runner scripts inside one container image.
+
+numpy>=1.24.0
+scipy>=1.11.0
+opencv-python-headless>=4.8.0
+Pillow>=10.0.0
+scikit-image>=0.21.0
+ffmpeg-python>=0.2.0
+librosa>=0.10.0
+soundfile>=0.12.1
+scenedetect>=0.6.0
+imagehash>=4.3.1
+pymediainfo>=6.0.1
+PyWavelets>=1.4.1

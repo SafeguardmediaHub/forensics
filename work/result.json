@@ -1,0 +1,85 @@
+{
+  "ela_analysis": {
+    "ela_image": "/tmp/frame_analysis/efbd313e-8c6c-4e69-8f8e-b61798bf6893/ela_heatmap.png",
+    "ela_score": 0.29,
+    "interpretation": "Low"
+  },
+  "noise_analysis": {
+    "interpretation": "Low",
+    "noise_heatmap": "/tmp/frame_analysis/efbd313e-8c6c-4e69-8f8e-b61798bf6893/noise_heatmap.png",
+    "noise_inconsistency_score": 19.14
+  },
+  "copy_move_detection": {
+    "clone_heatmap": "/tmp/frame_analysis/efbd313e-8c6c-4e69-8f8e-b61798bf6893/clone_detection.png",
+    "clone_score": 0.72,
+    "interpretation": "Low",
+    "keypoints_detected": 1000,
+    "matches_found": 4,
+    "method": "SIFT (Scale-Invariant)"
+  },
+  "jpeg_compression": {
+    "artifact_score": 23.86,
+    "block_artifacts": 2596,
+    "bytes_per_pixel": 0.149,
+    "compression_level": "High",
+    "double_compression_likelihood": "Medium",
+    "format": "JPEG",
+    "interpretation": "Possibly re-compressed (edited)",
+    "quality_estimate": "Low (<70)",
+    "quantization_tables_present": true
+  },
+  "exif_metadata": {
+    "created": "2026-03-04T20:34:27.041277",
+    "dimensions": "685x1024",
+    "exif": {},
+    "file_size_bytes": 104171,
+    "file_size_mb": 0.1,
+    "filename": "efbd313e-8c6c-4e69-8f8e-b61798bf6893_20260304_194753.jpg",
+    "format": "JPEG",
+    "md5": "133c913cb43894187dfadc545adc0d10",
+    "mode": "RGB",
+    "modified": "2026-03-04T20:34:27.041277",
+    "sha256": "a3ecf44a7693c4d9be28d32a14962beb9d5dee8d961a87d154c63e128d1c4a12"
+  },
+  "analysis_summary": {
+    "combined_heatmap": "/tmp/frame_analysis/efbd313e-8c6c-4e69-8f8e-b61798bf6893/combined_heatmap.png",
+    "explanation": {
+      "how_to_read": {
+        "LOW RISK (0-30%)": "Image appears authentic",
+        "MEDIUM RISK (31-60%)": "Some suspicious patterns detected",
+        "HIGH RISK (61-100%)": "Strong manipulation indicators"
+      },
+      "what_we_checked": [
+        "Compression patterns (Error Level Analysis)",
+        "Noise consistency across image",
+        "Copy-paste detection (SIFT keypoints)",
+        "JPEG re-compression signs",
+        "Metadata authenticity"
+      ]
+    },
+    "image_info": {
+      "dimensions": "685x1024",
+      "file_size": 0.1,
+      "format": "JPEG",
+      "has_gps": false
+    },
+    "issues_found": ["Missing camera information (metadata stripped)"],
+    "note": "Analysis based on forensic techniques only (AI detection disabled)",
+    "positive_findings": [
+      "Consistent compression patterns across image",
+      "Uniform noise distribution detected",
+      "No copy-paste manipulation detected",
+      "Single compression detected (not re-edited)"
+    ],
+    "recommendation": "This image appears mostly authentic, but always verify important claims.",
+    "status": "LOW RISK",
+    "tampering_probability": 17.0,
+    "trust_level": "Likely Authentic"
+  },
+  "verification_hashes": {
+    "md5": "133c913cb43894187dfadc545adc0d10",
+    "sha1": "1a6994281cc04acf3ce949833781df75886a3865",
+    "sha256": "a3ecf44a7693c4d9be28d32a14962beb9d5dee8d961a87d154c63e128d1c4a12"
+  },
+  "platform": "FVA Forensics Platform · Frame · Image · Audio · Bitstream Analysis"
+}

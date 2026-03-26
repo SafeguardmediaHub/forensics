@@ -1,0 +1,24 @@
+{
+  "engine": "aff",
+  "sample": "AFF/AUD-20230414-WA0012.m4a",
+  "capture_method": "direct engine execution via AFF pipeline/modules/fusion",
+  "comparison_fields": {
+    "verdict": "likely_authentic",
+    "verdict_label": "Likely Authentic",
+    "fused_probability": 0.194,
+    "confidence": 0.5942,
+    "elevated_modules": [
+      "reverberation",
+      "voice"
+    ],
+    "skipped_modules": [],
+    "finding_titles": [
+      "Timestamp anomaly",
+      "Acoustic environment change detected",
+      "Fundamental frequency change detected",
+      "Spectral flatness inconsistency across recording",
+      "Unstable fundamental frequency across recording",
+      "ENF signal absent or below detection threshold"
+    ]
+  }
+}

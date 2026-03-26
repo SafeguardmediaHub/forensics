@@ -1,0 +1,47 @@
+# Core Flask & Web
+Flask
+flask-cors
+flask-limiter[redis]
+werkzeug
+
+# Async Processing
+celery
+redis
+
+# Computer Vision & Image Processing
+opencv-python-headless
+Pillow
+scikit-image
+numpy
+
+# Video Processing
+ffmpeg-python
+scenedetect
+
+# Scientific Computing
+scipy
+matplotlib
+
+# PDF Generation (for reports)
+reportlab
+
+# Optional: Progress bars
+tqdm
+
+# video modules
+imagehash
+librosa
+soundfile
+noisereduce
+pydub
+pandas
+audioread
+resampy
+seaborn
+plotly
+openai-whisper
+resemblyzer
+
+# Video Forensics
+pymediainfo        # Container metadata (optional; graceful fallback to ffprobe)
+av                 # PyAV — low-level bitstream access

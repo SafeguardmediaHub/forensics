@@ -1,0 +1,28 @@
+{
+  "engine": "aff",
+  "sample": "AFF/content_deleted.wav",
+  "capture_method": "direct engine execution via AFF pipeline/modules/fusion",
+  "comparison_fields": {
+    "verdict": "tampered",
+    "verdict_label": "Tampered",
+    "fused_probability": 0.6794,
+    "confidence": 0.6552,
+    "elevated_modules": [
+      "noise",
+      "compression",
+      "voice"
+    ],
+    "skipped_modules": [],
+    "finding_titles": [
+      "Noise floor spectral inconsistency",
+      "Noise floor change-point detected",
+      "Lossy codec artifacts in PCM/lossless file",
+      "Fundamental frequency change detected",
+      "Sample rate vs bandwidth mismatch",
+      "High-frequency noise energy inconsistency",
+      "Spectral flatness inconsistency across recording",
+      "Unstable fundamental frequency across recording",
+      "ENF signal absent or below detection threshold"
+    ]
+  }
+}

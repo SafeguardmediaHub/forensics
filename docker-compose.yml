@@ -1,0 +1,65 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  safeguardmedia-api:
+    build:
+      context: .
+      dockerfile: safeguardmedia/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - redis
+    env_file:
+      - safeguardmedia/.env.example
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /runtime/uploads
+      OUTPUT_DIR: /runtime/outputs
+    command: >
+      sh -c "PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    volumes:
+      - sgm_runtime:/runtime
+
+  safeguardmedia-worker:
+    build:
+      context: .
+      dockerfile: safeguardmedia/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - redis
+    env_file:
+      - safeguardmedia/.env.example
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /runtime/uploads
+      OUTPUT_DIR: /runtime/outputs
+    command: >
+      sh -c "PYTHONPATH=src celery -A api.workers.celery_app worker --loglevel=info"
+    volumes:
+      - sgm_runtime:/runtime
+
+  safeguardmedia-beat:
+    build:
+      context: .
+      dockerfile: safeguardmedia/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - redis
+    env_file:
+      - safeguardmedia/.env.example
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /runtime/uploads
+      OUTPUT_DIR: /runtime/outputs
+    command: >
+      sh -c "PYTHONPATH=src celery -A api.workers.celery_app beat --loglevel=info"
+    volumes:
+      - sgm_runtime:/runtime
+
+volumes:
+  sgm_runtime:
