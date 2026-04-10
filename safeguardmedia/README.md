@@ -90,6 +90,53 @@ make format     # black formatting
 make check      # lint + format check (CI-safe)
 ```
 
+## Response shape
+
+All four analysis endpoints return a unified shape. Forensics is
+probabilistic — the API deliberately does not emit categorical verdicts.
+Instead it reports signal strength, what the detectors measured, and
+recommended next steps.
+
+Key fields:
+
+| Field | Meaning |
+|---|---|
+| `risk_score` | 0–100. Signal strength from the detectors. Not a claim about the file. |
+| `risk_band` | `low` (0–39) / `elevated` (40–74) / `high` (75–100). |
+| `measurement_confidence` | 0.0–1.0. How trustworthy the measurement itself is, separate from `risk_score`. |
+| `calibration_status` | `pre_calibration` / `calibrated` / `recalibrating`. Currently `pre_calibration` — thresholds are provisional. |
+| `elevated_detectors` | Names of detectors whose score crossed their elevated threshold. |
+| `checks_unavailable` | Engine-internal checks that were expected to run but couldn't (e.g. `exif_metadata` missing, `enf` detector skipped). Scoped to this project's own engines only. |
+| `interpretation.summary` | One-sentence observational description of what the detectors found. |
+| `interpretation.what_this_means` | Plain-language framing. Describes the measurement, not the file. |
+| `interpretation.next_steps` | List of recommended follow-up actions. Each entry has `action`, `label`, `type` (`manual` or `platform_feature`), and optionally `feature` (a pointer to a capability in the wider platform such as `content_verification.reverse_lookup` or `ai_detection.image`). |
+
+**Deprecated fields** (always `null`, scheduled for removal next release):
+`verdict`, `verdict_label`, `probability`, `tampering_likelihood`. Do not
+read these in new code — use `risk_score` / `risk_band` /
+`measurement_confidence` instead.
+
+### Next-steps catalog
+
+`interpretation.next_steps` is a static per-media-type list for v1. It
+always includes the universal manual steps (`verify_source`,
+`request_original`, `compare_versions`, `caution_before_share`) plus
+media-specific `platform_feature` suggestions:
+
+- **image**: `check_c2pa`, `check_metadata_authenticity`, `reverse_image_lookup`, `ai_detection_image`, `ocr_extract`
+- **video** / **frames**: `check_c2pa`, `check_metadata_authenticity`, `keyframe_reverse_lookup`, `ai_detection_video`
+- **audio**: `check_c2pa`, `check_metadata_authenticity`, `ai_detection_audio`
+
+The `feature` strings are stable IDs. This project never calls those
+features itself and never claims to know their result — the backend
+maps each `feature` string to its own endpoints when rendering.
+
+Risk-band cutoffs live in
+`src/api/interpretation/bands.py`. Copy lives in
+`src/api/interpretation/copy.py` and is guarded by a banned-words test
+that blocks verdict language (`manipulated`, `authentic`, `tampered`,
+etc.) from ever appearing in generated summaries.
+
 ## Project Structure
 
 ```

@@ -10,7 +10,10 @@ from typing import Any
 from fastapi import HTTPException, UploadFile
 
 from api.config import settings
+from api.interpretation import band_for, build_interpretation, resolve_unavailable
 from api.services.file_service import build_runtime_paths, cleanup_runtime_paths, ensure_runtime_dirs
+
+CALIBRATION_STATUS = "pre_calibration"
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 CHUNK_SIZE = 1024 * 1024
@@ -218,22 +221,34 @@ def _normalize_result(
         confidence = _clamp(raw_result.get("confidence"))
         file_sha = raw_result.get("audio", {}).get("sha256")
         findings = _normalize_generic_findings(raw_result.get("findings", []))
-        verdict = _normalize_verdict(raw_result.get("verdict"))
+        elevated_detectors = list(raw_result.get("elevated_modules", []) or [])
+        total_detectors = len(raw_result.get("module_scores", {}) or {})
+        risk_score = int(round(probability * 100))
         return {
             "media_type": media_type,
             "engine": "aff",
-            "verdict": verdict,
-            "verdict_label": raw_result.get("verdict_label") or _label_from_verdict(verdict),
-            "probability": probability,
-            "confidence": confidence,
-            "findings": findings,
-            "summary": _first_non_empty(
-                raw_result.get("conflict_description"),
-                findings[0]["description"] if findings else None,
-                raw_result.get("calibration_note"),
+            "risk_score": risk_score,
+            "risk_band": band_for(risk_score),
+            "measurement_confidence": confidence,
+            "calibration_status": CALIBRATION_STATUS,
+            "elevated_detectors": elevated_detectors,
+            "checks_unavailable": resolve_unavailable(raw_result, "audio"),
+            "interpretation": build_interpretation(
+                media_type="audio",
+                risk_score=risk_score,
+                elevated_detectors=elevated_detectors,
+                total_detectors=total_detectors,
+                n_findings=len(findings),
+                calibration_status=CALIBRATION_STATUS,
             ),
+            "findings": findings,
             "file": {"filename": filename, "sha256": file_sha},
             "engine_detail": raw_result,
+            # Deprecated — always null. Scheduled for removal next release.
+            "verdict": None,
+            "verdict_label": None,
+            "probability": None,
+            "tampering_likelihood": None,
         }
 
     if media_type == "video":
@@ -241,59 +256,167 @@ def _normalize_result(
         confidence = _clamp(raw_result.get("confidence"))
         file_sha = raw_result.get("video", {}).get("sha256")
         findings = _normalize_generic_findings(raw_result.get("findings", []))
-        verdict = _normalize_verdict(raw_result.get("verdict"))
+        elevated_detectors = _vff_elevated_detectors(raw_result)
+        total_detectors = len(raw_result.get("module_scores", {}) or {})
+        risk_score = int(round(probability * 100))
         return {
             "media_type": media_type,
             "engine": "vff",
-            "verdict": verdict,
-            "verdict_label": raw_result.get("verdict_label") or _label_from_verdict(verdict),
-            "probability": probability,
-            "confidence": confidence,
-            "findings": findings,
-            "summary": _first_non_empty(
-                findings[0]["description"] if findings else None,
-                raw_result.get("calibration_note"),
+            "risk_score": risk_score,
+            "risk_band": band_for(risk_score),
+            "measurement_confidence": confidence,
+            "calibration_status": CALIBRATION_STATUS,
+            "elevated_detectors": elevated_detectors,
+            "checks_unavailable": resolve_unavailable(raw_result, "video"),
+            "interpretation": build_interpretation(
+                media_type="video",
+                risk_score=risk_score,
+                elevated_detectors=elevated_detectors,
+                total_detectors=total_detectors,
+                n_findings=len(findings),
+                calibration_status=CALIBRATION_STATUS,
             ),
+            "findings": findings,
             "file": {"filename": filename, "sha256": file_sha},
             "engine_detail": raw_result,
+            # Deprecated — always null. Scheduled for removal next release.
+            "verdict": None,
+            "verdict_label": None,
+            "probability": None,
+            "tampering_likelihood": None,
         }
 
     if media_type == "image":
         probability = _clamp(_as_float(raw_result.get("tampering_likelihood")) / 100.0)
         confidence = _confidence_from_string(raw_result.get("confidence"))
-        verdict = _normalize_verdict(raw_result.get("verdict"))
+        risk_score = int(round(probability * 100))
+        elevated_detectors = _work_image_elevated_detectors(raw_result)
+        total_detectors = _work_image_total_detectors(raw_result)
         return {
             "media_type": media_type,
             "engine": "work",
-            "verdict": verdict,
-            "verdict_label": raw_result.get("verdict") or _label_from_verdict(verdict),
-            "probability": probability,
-            "confidence": confidence,
+            "risk_score": risk_score,
+            "risk_band": band_for(risk_score),
+            "measurement_confidence": confidence,
+            "calibration_status": CALIBRATION_STATUS,
+            "elevated_detectors": elevated_detectors,
+            "checks_unavailable": resolve_unavailable(raw_result, "image"),
+            "interpretation": build_interpretation(
+                media_type="image",
+                risk_score=risk_score,
+                elevated_detectors=elevated_detectors,
+                total_detectors=total_detectors,
+                n_findings=0,
+                calibration_status=CALIBRATION_STATUS,
+            ),
             "findings": [],
-            "summary": raw_result.get("note"),
             "file": {
                 "filename": filename,
                 "sha256": raw_result.get("file", {}).get("sha256"),
             },
             "engine_detail": raw_result,
+            # Deprecated — always null. Scheduled for removal next release.
+            "verdict": None,
+            "verdict_label": None,
+            "probability": None,
+            "tampering_likelihood": None,
         }
 
-    probability = _clamp(_as_float(raw_result.get("tampering_confidence")) / 100.0)
+    # frames: the engine reports tampering_confidence as 0–1 already.
+    raw_conf = _as_float(raw_result.get("tampering_confidence"))
+    probability = _clamp(raw_conf if raw_conf <= 1.0 else raw_conf / 100.0)
     confidence = probability
-    verdict = _normalize_verdict(raw_result.get("verdict"))
     findings = _normalize_frame_findings(raw_result.get("findings", []))
+    spatial_count = len(raw_result.get("spatial_findings", []) or [])
+    elevated_detectors: list[str] = []
+    if findings:
+        elevated_detectors.append("temporal")
+    if spatial_count:
+        elevated_detectors.append("spatial")
+    risk_score = int(round(probability * 100))
     return {
         "media_type": media_type,
         "engine": "work",
-        "verdict": verdict,
-        "verdict_label": _label_from_verdict(verdict),
-        "probability": probability,
-        "confidence": confidence,
+        "risk_score": risk_score,
+        "risk_band": band_for(risk_score),
+        "measurement_confidence": confidence,
+        "calibration_status": CALIBRATION_STATUS,
+        "elevated_detectors": elevated_detectors,
+        "checks_unavailable": resolve_unavailable(raw_result, "frames"),
+        "interpretation": build_interpretation(
+            media_type="frames",
+            risk_score=risk_score,
+            elevated_detectors=elevated_detectors,
+            total_detectors=2,  # temporal + spatial
+            n_findings=len(findings) + spatial_count,
+            calibration_status=CALIBRATION_STATUS,
+        ),
         "findings": findings,
-        "summary": raw_result.get("verdict_explanation"),
         "file": {"filename": filename, "sha256": None},
         "engine_detail": raw_result,
+        # Deprecated — always null. Scheduled for removal next release.
+        "verdict": None,
+        "verdict_label": None,
+        "probability": None,
+        "tampering_likelihood": None,
     }
+
+
+# Canonical list of forensic checks the work-engine image pipeline performs.
+# Used as the total_detectors denominator for image interpretation.
+_WORK_IMAGE_DETECTORS = ("ela", "noise", "copy_move", "jpeg_compression", "exif_metadata")
+
+
+def _work_image_total_detectors(raw_result: dict[str, Any]) -> int:
+    return len(_WORK_IMAGE_DETECTORS)
+
+
+def _work_image_elevated_detectors(raw_result: dict[str, Any]) -> list[str]:
+    """Derive the list of elevated detectors from the work-engine image report.
+
+    Display-only: risk_score is driven by the engine's own tampering_likelihood,
+    so any inaccuracy here only affects the summary sentence, not the band.
+    Thresholds mirror the engine's medium-band cutoffs loosely so the list
+    matches intuition without importing engine constants.
+    """
+    report = raw_result.get("report") or {}
+    manipulation = report.get("manipulation_detection") or {}
+    elevated: list[str] = []
+
+    ela_score = _as_float((manipulation.get("ela") or {}).get("ela_score"))
+    if ela_score > 10.0:
+        elevated.append("ela")
+
+    noise_score = _as_float(
+        (manipulation.get("noise") or {}).get("noise_inconsistency_score")
+    )
+    if noise_score > 5.0:
+        elevated.append("noise")
+
+    clone_score = _as_float(
+        (manipulation.get("copy_move") or {}).get("clone_score")
+    )
+    if clone_score > 0.1:
+        elevated.append("copy_move")
+
+    jpeg = manipulation.get("jpeg_compression") or {}
+    if jpeg.get("double_compression_likelihood") == "High":
+        elevated.append("jpeg_compression")
+
+    exif = (report.get("metadata") or {}).get("exif")
+    if not exif or (isinstance(exif, dict) and len(exif) < 3):
+        elevated.append("exif_metadata")
+
+    return elevated
+
+
+def _vff_elevated_detectors(raw_result: dict[str, Any]) -> list[str]:
+    """VFF's runner emits module_scores but only a count of elevated modules,
+    not the list. Approximate the list by flagging modules whose score is at
+    or above 0.5. Display-only — risk_score still comes from fused_probability.
+    """
+    module_scores = raw_result.get("module_scores", {}) or {}
+    return [name for name, score in module_scores.items() if float(score) >= 0.5]
 
 
 def _normalize_generic_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -331,24 +454,6 @@ def _normalize_frame_findings(findings: list[dict[str, Any]]) -> list[dict[str, 
     return normalized
 
 
-def _normalize_verdict(verdict: Any) -> str:
-    value = str(verdict or "inconclusive").strip().lower()
-    mapping = {
-        "likely authentic": "likely_authentic",
-        "likely_authentic": "likely_authentic",
-        "possibly tampered": "inconclusive",
-        "inconclusive": "inconclusive",
-        "likely tampered": "likely_tampered",
-        "likely_tampered": "likely_tampered",
-        "tampered": "tampered",
-    }
-    return mapping.get(value, value.replace(" ", "_"))
-
-
-def _label_from_verdict(verdict: str) -> str:
-    return verdict.replace("_", " ").title()
-
-
 def _confidence_from_string(value: Any) -> float:
     if isinstance(value, (int, float)):
         return _clamp(value)
@@ -372,8 +477,3 @@ def _clamp(value: Any) -> float:
     return round(number, 4)
 
 
-def _first_non_empty(*values: Any) -> str | None:
-    for value in values:
-        if value:
-            return str(value)
-    return None

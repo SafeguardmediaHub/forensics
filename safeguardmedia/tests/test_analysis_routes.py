@@ -55,10 +55,29 @@ async def test_unified_analyze_returns_normalized_result(client, monkeypatch):
     data = response.json()
     assert data["media_type"] == "image"
     assert data["engine"] == "work"
-    assert data["verdict"] == "likely_authentic"
-    assert data["verdict_label"] == "Likely Authentic"
-    assert data["probability"] == 0.17
-    assert data["confidence"] == 0.9
+
+    # New fields
+    assert data["risk_score"] == 17
+    assert data["risk_band"] == "low"
+    assert data["measurement_confidence"] == 0.9
+    assert data["calibration_status"] == "pre_calibration"
+    assert isinstance(data["elevated_detectors"], list)
+    # Empty report → no EXIF → `exif_metadata` flagged as elevated + unavailable
+    assert "exif_metadata" in data["elevated_detectors"]
+    assert any(c["name"] == "exif_metadata" for c in data["checks_unavailable"])
+    assert data["interpretation"]["summary"]
+    assert data["interpretation"]["what_this_means"]
+    actions = [s["action"] for s in data["interpretation"]["next_steps"]]
+    assert "reverse_image_lookup" in actions
+    assert "verify_source" in actions
+
+    # Deprecated fields — present but null
+    assert data["verdict"] is None
+    assert data["verdict_label"] is None
+    assert data["probability"] is None
+    assert data["tampering_likelihood"] is None
+
+    # Unchanged
     assert data["file"]["filename"] == "sample.png"
     assert data["file"]["sha256"] == "abc123"
     assert data["engine_detail"]["tampering_likelihood"] == 17.0
@@ -75,8 +94,18 @@ async def test_legacy_audio_route_uses_normalized_runner_result(client, monkeypa
             "engine": "aff",
             "verdict": "likely_authentic",
             "verdict_label": "Likely Authentic",
-            "fused_probability": 0.194,
-            "confidence": 0.5942,
+            "fused_probability": 0.82,
+            "confidence": 0.77,
+            "elevated_modules": ["noise", "voice"],
+            "module_scores": {
+                "metadata": 0.1,
+                "enf": 0.2,
+                "noise": 0.8,
+                "compression": 0.3,
+                "reverberation": 0.4,
+                "voice": 0.85,
+            },
+            "skipped_modules": ["enf"],
             "findings": [
                 {
                     "module": "voice",
@@ -86,7 +115,7 @@ async def test_legacy_audio_route_uses_normalized_runner_result(client, monkeypa
                     "description": "Potential speaker inconsistency detected.",
                 }
             ],
-            "audio": {"sha256": "sha-audio"},
+            "audio": {"sha256": "sha-audio", "codec": "aac"},
             "calibration_note": "Pre-calibration thresholds in use.",
         }
 
@@ -101,9 +130,28 @@ async def test_legacy_audio_route_uses_normalized_runner_result(client, monkeypa
     data = response.json()
     assert data["media_type"] == "audio"
     assert data["engine"] == "aff"
-    assert data["verdict"] == "likely_authentic"
-    assert data["probability"] == 0.194
-    assert data["confidence"] == 0.5942
+
+    # New fields
+    assert data["risk_score"] == 82
+    assert data["risk_band"] == "high"
+    assert data["measurement_confidence"] == 0.77
+    assert data["calibration_status"] == "pre_calibration"
+    assert data["elevated_detectors"] == ["noise", "voice"]
+    assert any(c["name"] == "enf" for c in data["checks_unavailable"])
+    assert data["interpretation"]["summary"]
+    assert data["interpretation"]["what_this_means"]
+    assert len(data["interpretation"]["next_steps"]) > 0
+    actions = [s["action"] for s in data["interpretation"]["next_steps"]]
+    assert "verify_source" in actions
+    assert "ai_detection_audio" in actions
+
+    # Deprecated fields — present but null
+    assert data["verdict"] is None
+    assert data["verdict_label"] is None
+    assert data["probability"] is None
+    assert data["tampering_likelihood"] is None
+
+    # Unchanged
     assert data["findings"][0]["module"] == "voice"
     assert data["file"]["filename"] == "sample.wav"
     assert data["file"]["sha256"] == "sha-audio"
