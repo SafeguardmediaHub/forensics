@@ -15,6 +15,19 @@ from api.services.file_service import build_runtime_paths, cleanup_runtime_paths
 
 CALIBRATION_STATUS = "pre_calibration"
 
+# Keys stripped from raw engine output before it leaves the API as
+# ``engine_detail``.  The engines still emit verdicts internally — we
+# just don't let them leak into the response so consumers can't read them
+# instead of the top-level risk fields.
+_VERDICT_KEYS_TOP = {
+    "verdict",
+    "verdict_label",
+    "verdict_explanation",
+    "tampering_likelihood",
+    "tampering_confidence",
+}
+_VERDICT_KEYS_REPORT = {"overall_assessment", "user_friendly_summary"}
+
 REPO_ROOT = Path(__file__).resolve().parents[4]
 CHUNK_SIZE = 1024 * 1024
 
@@ -211,6 +224,21 @@ def _run_runner(
         ) from exc
 
 
+def _strip_engine_verdicts(raw: dict[str, Any]) -> dict[str, Any]:
+    """Return a shallow-ish copy of *raw* with verdict fields removed.
+
+    Strips top-level verdict keys and, if a ``report`` dict exists, removes
+    nested verdict blocks (``overall_assessment``, ``user_friendly_summary``).
+    The rest of the engine output is preserved for debugging.
+    """
+    cleaned = {k: v for k, v in raw.items() if k not in _VERDICT_KEYS_TOP}
+    if "report" in cleaned and isinstance(cleaned["report"], dict):
+        cleaned["report"] = {
+            k: v for k, v in cleaned["report"].items() if k not in _VERDICT_KEYS_REPORT
+        }
+    return cleaned
+
+
 def _normalize_result(
     media_type: str,
     filename: str,
@@ -243,7 +271,7 @@ def _normalize_result(
             ),
             "findings": findings,
             "file": {"filename": filename, "sha256": file_sha},
-            "engine_detail": raw_result,
+            "engine_detail": _strip_engine_verdicts(raw_result),
             # Deprecated — always null. Scheduled for removal next release.
             "verdict": None,
             "verdict_label": None,
@@ -278,7 +306,7 @@ def _normalize_result(
             ),
             "findings": findings,
             "file": {"filename": filename, "sha256": file_sha},
-            "engine_detail": raw_result,
+            "engine_detail": _strip_engine_verdicts(raw_result),
             # Deprecated — always null. Scheduled for removal next release.
             "verdict": None,
             "verdict_label": None,
@@ -314,7 +342,7 @@ def _normalize_result(
                 "filename": filename,
                 "sha256": raw_result.get("file", {}).get("sha256"),
             },
-            "engine_detail": raw_result,
+            "engine_detail": _strip_engine_verdicts(raw_result),
             # Deprecated — always null. Scheduled for removal next release.
             "verdict": None,
             "verdict_label": None,
@@ -353,7 +381,7 @@ def _normalize_result(
         ),
         "findings": findings,
         "file": {"filename": filename, "sha256": None},
-        "engine_detail": raw_result,
+        "engine_detail": _strip_engine_verdicts(raw_result),
         # Deprecated — always null. Scheduled for removal next release.
         "verdict": None,
         "verdict_label": None,

@@ -1,5 +1,71 @@
 import pytest
 
+from api.services.analysis_service import _strip_engine_verdicts
+
+
+class TestStripEngineVerdicts:
+    """Verify that verdict-related keys are removed from engine_detail."""
+
+    def test_strips_top_level_verdict_keys(self):
+        raw = {
+            "engine": "aff",
+            "verdict": "likely_authentic",
+            "verdict_label": "Likely Authentic",
+            "fused_probability": 0.82,
+            "confidence": 0.77,
+        }
+        cleaned = _strip_engine_verdicts(raw)
+        assert "verdict" not in cleaned
+        assert "verdict_label" not in cleaned
+        # Non-verdict keys preserved
+        assert cleaned["engine"] == "aff"
+        assert cleaned["fused_probability"] == 0.82
+        assert cleaned["confidence"] == 0.77
+
+    def test_strips_nested_report_blocks(self):
+        raw = {
+            "engine": "work",
+            "verdict": "Likely Authentic",
+            "tampering_likelihood": 17.0,
+            "report": {
+                "overall_assessment": {"verdict": "Likely Authentic", "tampering_likelihood": 17},
+                "user_friendly_summary": {"status": "LOW RISK", "trust_level": "Likely Authentic"},
+                "manipulation_detection": {"ela": {"ela_score": 0.18}},
+            },
+        }
+        cleaned = _strip_engine_verdicts(raw)
+        assert "verdict" not in cleaned
+        assert "tampering_likelihood" not in cleaned
+        assert "overall_assessment" not in cleaned["report"]
+        assert "user_friendly_summary" not in cleaned["report"]
+        # Non-verdict report keys preserved
+        assert cleaned["report"]["manipulation_detection"]["ela"]["ela_score"] == 0.18
+
+    def test_strips_frames_verdict_keys(self):
+        raw = {
+            "engine": "work",
+            "verdict": "LIKELY_AUTHENTIC",
+            "verdict_explanation": "Low confidence",
+            "tampering_confidence": 0.12,
+            "findings": [],
+        }
+        cleaned = _strip_engine_verdicts(raw)
+        assert "verdict" not in cleaned
+        assert "verdict_explanation" not in cleaned
+        assert "tampering_confidence" not in cleaned
+        assert cleaned["findings"] == []
+
+    def test_handles_no_report_key(self):
+        raw = {"engine": "aff", "verdict": "likely_authentic"}
+        cleaned = _strip_engine_verdicts(raw)
+        assert "report" not in cleaned
+        assert "verdict" not in cleaned
+
+    def test_does_not_mutate_original(self):
+        raw = {"verdict": "test", "engine": "aff"}
+        _strip_engine_verdicts(raw)
+        assert "verdict" in raw
+
 
 @pytest.mark.asyncio
 async def test_unified_analyze_rejects_invalid_media_type(client):
@@ -80,7 +146,11 @@ async def test_unified_analyze_returns_normalized_result(client, monkeypatch):
     # Unchanged
     assert data["file"]["filename"] == "sample.png"
     assert data["file"]["sha256"] == "abc123"
-    assert data["engine_detail"]["tampering_likelihood"] == 17.0
+    # engine_detail should NOT contain verdict fields
+    assert "verdict" not in data["engine_detail"]
+    assert "tampering_likelihood" not in data["engine_detail"]
+    # but should still carry non-verdict engine output
+    assert data["engine_detail"]["engine"] == "work"
 
 
 @pytest.mark.asyncio
@@ -155,6 +225,13 @@ async def test_legacy_audio_route_uses_normalized_runner_result(client, monkeypa
     assert data["findings"][0]["module"] == "voice"
     assert data["file"]["filename"] == "sample.wav"
     assert data["file"]["sha256"] == "sha-audio"
+
+    # engine_detail should NOT contain verdict fields
+    assert "verdict" not in data["engine_detail"]
+    assert "verdict_label" not in data["engine_detail"]
+    # but should still carry non-verdict engine output
+    assert data["engine_detail"]["engine"] == "aff"
+    assert data["engine_detail"]["fused_probability"] == 0.82
 
 
 @pytest.mark.asyncio
