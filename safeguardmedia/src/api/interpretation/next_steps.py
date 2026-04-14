@@ -7,10 +7,11 @@ string. The backend maps those feature strings to its own endpoint IDs
 when rendering — this project never calls those features itself and
 never claims to know their result.
 
-Signal-conditional steps (layer 3 from the plan — rules based on *which*
-detectors elevated) are deliberately deferred. Add them here once real
-usage tells us which rules matter.
+Signal-conditional steps are inserted between the universal manual steps
+and the platform-feature steps based on which detectors elevated.
 """
+
+from __future__ import annotations
 
 from typing import Any
 
@@ -40,6 +41,101 @@ _UNIVERSAL_CAUTION: dict[str, Any] = {
     "action": "caution_before_share",
     "label": "Use caution before sharing or publishing",
     "type": "manual",
+}
+
+# ── Signal-conditional steps ─────────────────────────────────────────────────
+# Inserted when specific detectors are elevated. Each detector maps to one
+# or more manual steps that guide the user toward the most relevant follow-up
+# for that particular signal.
+
+_SIGNAL_CONDITIONAL_STEPS: dict[str, list[dict[str, Any]]] = {
+    "ela": [
+        {
+            "action": "inspect_ela_regions",
+            "label": (
+                "Examine regions with compression differences "
+                "— look for areas that stand out in the ELA heatmap"
+            ),
+            "type": "manual",
+        },
+    ],
+    "noise": [
+        {
+            "action": "inspect_noise_regions",
+            "label": (
+                "Examine regions with different noise grain "
+                "— these may come from a different source"
+            ),
+            "type": "manual",
+        },
+    ],
+    "copy_move": [
+        {
+            "action": "inspect_clone_regions",
+            "label": (
+                "Review matched keypoint pairs "
+                "— these regions share repeated pixel patterns"
+            ),
+            "type": "manual",
+        },
+    ],
+    "jpeg_compression": [
+        {
+            "action": "inspect_compression",
+            "label": (
+                "Look for visible block artifacts at 8x8 pixel boundaries "
+                "— signs of re-saving"
+            ),
+            "type": "manual",
+        },
+    ],
+    "exif_metadata": [
+        {
+            "action": "investigate_metadata",
+            "label": (
+                "Investigate why camera metadata is missing "
+                "— common in screenshots, re-exports, or processed files"
+            ),
+            "type": "manual",
+        },
+    ],
+    "temporal": [
+        {
+            "action": "review_temporal_segments",
+            "label": (
+                "Review flagged time ranges for cuts, freezes, "
+                "or timing irregularities"
+            ),
+            "type": "manual",
+        },
+    ],
+    "spatial": [
+        {
+            "action": "review_flagged_frames",
+            "label": "Examine individual frames flagged by per-frame analysis",
+            "type": "manual",
+        },
+    ],
+    "crop_detection": [
+        {
+            "action": "request_uncropped",
+            "label": (
+                "Request the uncropped original "
+                "— the image may have been trimmed from a larger file"
+            ),
+            "type": "manual",
+        },
+    ],
+    "screenshot_detection": [
+        {
+            "action": "request_pre_screenshot",
+            "label": (
+                "Request the original file before screen capture "
+                "— screenshots lose metadata and fidelity"
+            ),
+            "type": "manual",
+        },
+    ],
 }
 
 # Platform-feature suggestions per media type. `feature` strings are
@@ -129,11 +225,25 @@ _PLATFORM_FEATURES: dict[MediaType, list[dict[str, Any]]] = {
 _PLATFORM_FEATURES["frames"] = _PLATFORM_FEATURES["video"]
 
 
-def next_steps_for(media_type: MediaType) -> list[dict[str, Any]]:
-    """Return the v1 static next-steps list for a media type.
+def next_steps_for(
+    media_type: MediaType,
+    elevated_detectors: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Return the next-steps list for a media type.
 
+    When *elevated_detectors* is provided, signal-conditional steps are
+    inserted between the universal manual steps and platform features.
     Unknown media types fall back to the universal manual steps only,
     so an upstream typo can't empty the list.
     """
+    # Build conditional steps from elevated detectors.
+    conditional: list[dict[str, Any]] = []
+    seen_actions: set[str] = set()
+    for det in elevated_detectors or []:
+        for step in _SIGNAL_CONDITIONAL_STEPS.get(det, []):
+            if step["action"] not in seen_actions:
+                conditional.append(step)
+                seen_actions.add(step["action"])
+
     features = _PLATFORM_FEATURES.get(media_type, [])
-    return [*_UNIVERSAL_MANUAL, *features, _UNIVERSAL_CAUTION]
+    return [*_UNIVERSAL_MANUAL, *conditional, *features, _UNIVERSAL_CAUTION]

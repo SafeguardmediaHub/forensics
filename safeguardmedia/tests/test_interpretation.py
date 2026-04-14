@@ -14,7 +14,6 @@ from api.interpretation import (
 )
 from api.interpretation.copy import BANNED_WORDS
 
-
 # ── bands ─────────────────────────────────────────────────────────────────────
 
 class TestBands:
@@ -105,13 +104,10 @@ class TestCopy:
         low = build_what_this_means("low", "pre_calibration")
         assert high != elevated != low
 
-    def test_pre_calibration_note_appended(self):
+    def test_no_calibration_note_in_output(self):
         s = build_what_this_means("high", "pre_calibration")
-        assert "provisional" in s.lower()
-
-    def test_calibrated_has_no_provisional_note(self):
-        s = build_what_this_means("high", "calibrated")
         assert "provisional" not in s.lower()
+        assert "calibration" not in s.lower()
 
 
 # ── banned words lint ────────────────────────────────────────────────────────
@@ -220,3 +216,200 @@ class TestBuildInterpretation:
             calibration_status="pre_calibration",
         )
         Interpretation.model_validate(interp)
+
+
+# ── Signal-aware interpretation ──────────────────────────────────────────────
+
+class TestSignalAwareSummary:
+    def test_summary_includes_detector_display_names(self):
+        details = [{"name": "ela", "score": 18.4}]
+        s = build_summary(
+            ["ela"],
+            total_detectors=5,
+            n_findings=1,
+            detector_details=details,
+        )
+        assert "Error Level Analysis" in s
+        assert "18.4" in s
+
+    def test_summary_multiple_detectors(self):
+        details = [
+            {"name": "ela", "score": 18.4},
+            {"name": "noise", "score": 52.1},
+        ]
+        s = build_summary(
+            ["ela", "noise"],
+            total_detectors=5,
+            n_findings=2,
+            detector_details=details,
+        )
+        assert "Error Level Analysis" in s
+        assert "Noise Analysis" in s
+
+    def test_summary_without_details_falls_back(self):
+        s = build_summary(["ela"], total_detectors=5, n_findings=1)
+        # Old behavior: includes detector name in list
+        assert "ela" in s
+        assert "1 of 5" in s
+
+    def test_summary_detector_without_score(self):
+        details = [{"name": "exif_metadata"}]
+        s = build_summary(
+            ["exif_metadata"],
+            total_detectors=5,
+            n_findings=1,
+            detector_details=details,
+        )
+        assert "Metadata Analysis" in s
+
+    def test_summary_unknown_detector_falls_back_gracefully(self):
+        details = [{"name": "mystery_detector"}]
+        s = build_summary(
+            ["mystery_detector"],
+            total_detectors=5,
+            n_findings=0,
+            detector_details=details,
+        )
+        # Should title-case the name as fallback
+        assert "Mystery Detector" in s
+
+
+class TestSignalAwareWhatThisMeans:
+    def test_includes_detector_context_when_provided(self):
+        details = [{"name": "ela"}]
+        text = build_what_this_means(
+            "elevated", "pre_calibration", detector_details=details,
+        )
+        assert "compress" in text.lower()
+
+    def test_cap_at_three_detectors(self):
+        details = [
+            {"name": "ela"},
+            {"name": "noise"},
+            {"name": "copy_move"},
+            {"name": "jpeg_compression"},
+            {"name": "exif_metadata"},
+        ]
+        text = build_what_this_means(
+            "high", "pre_calibration", detector_details=details,
+        )
+        # Only first 3 get full context sentences; rest summarised.
+        assert "Additional signals" in text
+
+    def test_fallback_when_no_details(self):
+        text = build_what_this_means("elevated", "pre_calibration")
+        # Original framing paragraph is still returned.
+        assert text
+        assert "tools measured" in text.lower()
+
+
+class TestConditionalNextSteps:
+    def test_ela_elevated_adds_heatmap_step(self):
+        steps = next_steps_for("image", elevated_detectors=["ela"])
+        actions = [s["action"] for s in steps]
+        assert "inspect_ela_regions" in actions
+
+    def test_multiple_detectors_add_multiple_steps(self):
+        steps = next_steps_for(
+            "image", elevated_detectors=["ela", "noise", "copy_move"],
+        )
+        actions = [s["action"] for s in steps]
+        assert "inspect_ela_regions" in actions
+        assert "inspect_noise_regions" in actions
+        assert "inspect_clone_regions" in actions
+
+    def test_no_elevated_no_conditional_steps(self):
+        steps = next_steps_for("image", elevated_detectors=[])
+        actions = [s["action"] for s in steps]
+        assert "inspect_ela_regions" not in actions
+        assert "inspect_noise_regions" not in actions
+
+    def test_backward_compatible_no_arg(self):
+        # Still callable without the new param (default None).
+        steps = next_steps_for("image")
+        assert len(steps) > 0
+        actions = [s["action"] for s in steps]
+        assert "verify_source" in actions
+
+    def test_deduplication(self):
+        # Repeated detector name should not produce duplicate steps.
+        steps = next_steps_for("image", elevated_detectors=["ela", "ela"])
+        actions = [s["action"] for s in steps]
+        assert actions.count("inspect_ela_regions") == 1
+
+    def test_crop_detection_adds_uncropped_step(self):
+        steps = next_steps_for(
+            "image", elevated_detectors=["crop_detection"],
+        )
+        actions = [s["action"] for s in steps]
+        assert "request_uncropped" in actions
+
+    def test_screenshot_detection_adds_pre_screenshot_step(self):
+        steps = next_steps_for(
+            "image", elevated_detectors=["screenshot_detection"],
+        )
+        actions = [s["action"] for s in steps]
+        assert "request_pre_screenshot" in actions
+
+
+class TestSignalAwareBannedWords:
+    """Signal-aware copy must also pass banned-words lint."""
+
+    def _assert_clean(self, text: str):
+        import re
+
+        lowered = text.lower()
+        for word in BANNED_WORDS:
+            assert not re.search(rf"\b{re.escape(word)}\b", lowered), (
+                f"Banned verdict word '{word}' found in: {text!r}"
+            )
+
+    @pytest.mark.parametrize("detector", [
+        "ela", "noise", "copy_move", "jpeg_compression", "exif_metadata",
+        "temporal", "spatial", "crop_detection", "screenshot_detection",
+    ])
+    def test_summary_with_each_detector_clean(self, detector):
+        details = [{"name": detector, "score": 42.5}]
+        s = build_summary([detector], 5, 1, detector_details=details)
+        self._assert_clean(s)
+
+    @pytest.mark.parametrize("detector", [
+        "ela", "noise", "copy_move", "jpeg_compression", "exif_metadata",
+        "temporal", "spatial", "crop_detection", "screenshot_detection",
+    ])
+    @pytest.mark.parametrize("band", ["low", "elevated", "high"])
+    def test_what_this_means_with_each_detector_clean(self, detector, band):
+        details = [{"name": detector}]
+        text = build_what_this_means(band, "pre_calibration", detector_details=details)
+        self._assert_clean(text)
+
+    def test_conditional_step_labels_clean(self):
+        for detector in ["ela", "noise", "copy_move", "jpeg_compression",
+                         "exif_metadata", "temporal", "spatial",
+                         "crop_detection", "screenshot_detection"]:
+            steps = next_steps_for("image", elevated_detectors=[detector])
+            for step in steps:
+                self._assert_clean(step["label"])
+
+
+class TestBuildInterpretationWithDetails:
+    def test_accepts_detector_details(self):
+        from api.schemas.responses import Interpretation
+
+        interp = build_interpretation(
+            media_type="image",
+            risk_score=65,
+            elevated_detectors=["ela", "noise"],
+            total_detectors=5,
+            n_findings=2,
+            calibration_status="pre_calibration",
+            detector_details=[
+                {"name": "ela", "score": 18.4},
+                {"name": "noise", "score": 52.1},
+            ],
+        )
+        Interpretation.model_validate(interp)
+        assert "Error Level Analysis" in interp["summary"]
+        # Conditional next step should appear.
+        actions = [s["action"] for s in interp["next_steps"]]
+        assert "inspect_ela_regions" in actions

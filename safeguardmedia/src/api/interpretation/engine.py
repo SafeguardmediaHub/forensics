@@ -5,6 +5,8 @@ from their engine's output and get back the `interpretation` sub-object
 to drop into the response.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 from .bands import band_for
@@ -20,6 +22,7 @@ def build_interpretation(
     total_detectors: int,
     n_findings: int,
     calibration_status: str,
+    detector_details: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the interpretation sub-object for a forensic response."""
     risk_band = band_for(risk_score)
@@ -28,10 +31,15 @@ def build_interpretation(
             elevated_detectors=elevated_detectors,
             total_detectors=total_detectors,
             n_findings=n_findings,
+            detector_details=detector_details,
         ),
         "what_this_means": build_what_this_means(
             risk_band=risk_band,
             calibration_status=calibration_status,
+            detector_details=detector_details,
         ),
-        "next_steps": next_steps_for(media_type),
+        "next_steps": next_steps_for(
+            media_type,
+            elevated_detectors=elevated_detectors,
+        ),
     }

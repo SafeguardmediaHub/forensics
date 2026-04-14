@@ -26,6 +26,8 @@ from forensic_primitives import (
     copy_move_detection_sift,
     copy_move_detection_dct_fallback,
 )
+from crop_detection import detect_crop
+from screenshot_detection import detect_screenshot
 from forensic_config import (
     VF_ELA_HIGH_THRESHOLD, VF_ELA_MEDIUM_THRESHOLD,
     VF_NOISE_HIGH_THRESHOLD, VF_NOISE_MEDIUM_THRESHOLD,
@@ -619,6 +621,29 @@ def generate_forensic_report(image_path, output_dir, ai_detector=None,
             'enabled': False,
             'note': 'AI detection disabled - forensics analysis only',
         }
+
+        # Crop and screenshot detection — skipped for video frames since
+        # extracted frames never have camera EXIF and use PNG format.
+        if not is_video_frame:
+            try:
+                manipulation['crop_detection'] = detect_crop(image_path)
+            except Exception as e:
+                manipulation['crop_detection'] = {
+                    'error': f'crop detection failed: {e}',
+                    'crop_signals': [],
+                    'crop_score': 0,
+                    'confidence': 0.0,
+                }
+            try:
+                manipulation['screenshot_detection'] = detect_screenshot(image_path)
+            except Exception as e:
+                manipulation['screenshot_detection'] = {
+                    'error': f'screenshot detection failed: {e}',
+                    'screenshot_signals': [],
+                    'screenshot_score': 0,
+                    'confidence': 0.0,
+                }
+
         report['manipulation_detection'] = manipulation
 
         # ── Enhancement & hashes ─────────────────────────────────────────────
